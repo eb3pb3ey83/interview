@@ -2,9 +2,31 @@
   <q-page class="row q-pt-xl">
     <div class="full-width q-px-xl">
       <div class="q-mb-xl">
-        <q-input v-model="tempData.name" label="姓名" />
-        <q-input v-model="tempData.age" label="年齡" />
-        <q-btn color="primary" class="q-mt-md">新增</q-btn>
+        <q-input
+          v-model="tempData.name"
+          label="姓名"
+          :rules="[(val) => !!val || '姓名不得空白']"
+          ref="nameInput"
+        />
+        <q-input
+          v-model="tempData.age"
+          label="年龄"
+          type="number"
+          :rules="ageRules"
+          ref="ageInput"
+        />
+        <q-btn
+          color="primary"
+          label="新增"
+          @click="handleSubmit"
+          v-if="!isUpdating"
+        />
+        <q-btn
+          color="warning"
+          label="更新"
+          @click="handleSubmit"
+          v-if="isUpdating"
+        />
       </div>
 
       <q-table
@@ -80,52 +102,108 @@
 <script setup lang="ts">
 import axios from 'axios';
 import { QTableProps } from 'quasar';
-import { ref } from 'vue';
+import { onMounted, ref, computed } from 'vue';
+
 interface btnType {
   label: string;
   icon: string;
-  status: string;
+  status: 'edit' | 'delete';
 }
-const blockData = ref([
-  {
-    name: 'test',
-    age: 25,
-  },
-]);
-const tableConfig = ref([
-  {
-    label: '姓名',
-    name: 'name',
-    field: 'name',
-    align: 'left',
-  },
-  {
-    label: '年齡',
-    name: 'age',
-    field: 'age',
-    align: 'left',
-  },
-]);
-const tableButtons = ref([
-  {
-    label: '編輯',
-    icon: 'edit',
-    status: 'edit',
-  },
-  {
-    label: '刪除',
-    icon: 'delete',
-    status: 'delete',
-  },
+interface Data {
+  id: string;
+  age: string | number;
+  name: string;
+}
+
+const baseApiUrl = 'https://dahua.metcfire.com.tw/api/CRUDTest';
+const ageRules = [
+  (val: string) => val !== '' || '年齡不得空白',
+  (val: string) => /^\d+$/.test(val) || '年齡必須是正整數',
+];
+const nameInput = ref<any>(null);
+const ageInput = ref<any>(null);
+const blockData = ref<Data[]>([]);
+const tableConfig = ref<QTableProps['columns']>([
+  { label: '姓名', name: 'name', field: 'name', align: 'left' },
+  { label: '年齡', name: 'age', field: 'age', align: 'left' },
 ]);
 
-const tempData = ref({
-  name: '',
-  age: '',
-});
-function handleClickOption(btn, data) {
-  // ...
-}
+const tableButtons = ref<btnType[]>([
+  { label: '編輯', icon: 'edit', status: 'edit' },
+  { label: '刪除', icon: 'delete', status: 'delete' },
+]);
+
+const tempData = ref<Data>({ name: '', age: '', id: '' });
+const updateId = ref('');
+const isUpdating = computed(() => updateId.value !== '');
+
+// 重置表單
+const resetForm = () => {
+  tempData.value = { name: '', age: '', id: '' };
+  updateId.value = '';
+  nameInput.value.resetValidation();
+  ageInput.value.resetValidation();
+};
+
+// 通用的 API 調用函數
+const apiCall =
+  (method: 'post' | 'patch' | 'delete', url: string) => async (data?: any) => {
+    try {
+      await axios({ method, url, data });
+      await fetchData();
+      if (method !== 'delete') resetForm();
+    } catch (error) {
+      console.error(`${method.toUpperCase()} 失敗:`, error);
+    }
+  };
+
+const addRow = apiCall('post', baseApiUrl);
+const updateRow = apiCall('patch', baseApiUrl);
+const deleteRow = (id: string) => apiCall('delete', `${baseApiUrl}/${id}`)();
+
+const handleSubmit = () => {
+  if (!nameInput.value || !ageInput.value) return;
+  const isNameValid = nameInput.value.validate();
+  const isAgeValid = ageInput.value.validate();
+
+  if (isNameValid && isAgeValid) {
+    const dataToSend = {
+      ...tempData.value,
+      age: Number(tempData.value.age),
+    };
+    (isUpdating.value ? updateRow : addRow)(dataToSend);
+  }
+};
+
+// 獲取資料
+const fetchData = async () => {
+  try {
+    const response = await axios.get(
+      'https://dahua.metcfire.com.tw/api/CRUDTest/a'
+    );
+    blockData.value = response.data;
+  } catch (error) {
+    console.error('資料獲取失敗:', error);
+  }
+};
+
+// 編輯資料
+const editRow = (row: Data) => {
+  tempData.value = { ...row, age: String(row.age) };
+  updateId.value = row.id;
+};
+
+const actionMap = {
+  edit: editRow,
+  delete: (data: Data) => deleteRow(data.id),
+};
+
+const handleClickOption = (btn: btnType, data: Data) => {
+  const action = actionMap[btn.status];
+  action && action(data);
+};
+
+onMounted(fetchData);
 </script>
 
 <style lang="scss" scoped>
